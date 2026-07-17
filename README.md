@@ -2,28 +2,9 @@
 
 Servidor de contas, amigos, chat em tempo real e sincronização de "ouvindo junto" pro Koddle.
 
-Stack: **FastAPI** (Python) + **WebSocket** (chat em tempo real) + **MongoDB** (contas, amizades,
-histórico de mensagens) + **JWT** (login).
 
-## 1. Criar o banco de dados (MongoDB Atlas — grátis)
 
-1. Acesse **https://www.mongodb.com/cloud/atlas/register** e crie uma conta.
-2. Crie um cluster gratuito (**M0**, tier Free).
-3. Em **"Database Access"**, crie um usuário de banco (usuário + senha — anota isso).
-4. Em **"Network Access"**, clique em **"Add IP Address"** → **"Allow access from anywhere"**
-   (`0.0.0.0/0`). Isso é necessário porque o Railway não tem um IP fixo previsível.
-5. No cluster, clique em **"Connect"** → **"Drivers"** → copia a **connection string** (algo tipo
-   `mongodb+srv://usuario:<password>@cluster0.xxxxx.mongodb.net/`).
-6. Troca `<password>` pela senha que você criou no passo 3.
 
-Essa string é o valor de `MONGODB_URI`.
-
-## 2. Rodar local (pra testar antes de subir pro Railway)
-
-1. Copia `.env.example` pra um arquivo chamado `.env` e preenche com seus valores reais
-   (`MONGODB_URI` do passo 1, e qualquer texto aleatório longo pro `JWT_SECRET`).
-2. Instala as dependências:
-   ```
    pip install -r requirements.txt
    ```
 3. Roda o servidor:
