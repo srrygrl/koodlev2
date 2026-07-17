@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<title>Koddle</title>
+<link rel="stylesheet" href="style.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+  <div class="bg-wash" id="bgWash"></div>
+  <div class="bg-veil"></div>
+
+  <div class="gate-overlay hidden" id="gateOverlay">
+    <div class="gate-card">
+      <button class="gate-close" id="gateClose" aria-label="Fechar">&times;</button>
+      <p class="gate-eyebrow">Antes de começar</p>
+      <p class="gate-message">É necessário o Token do Discord para sincronizar o programa.</p>
+      <button class="gate-btn" id="gateGoSettings">Configurar token</button>
+    </div>
+  </div>
+
+  <div class="app">
+
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark" id="brandMark"></span>
+        <span class="brand-name">Kod<b>dle</b></span>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item is-active" data-tab="home">
+          <span class="nav-icon">&#9670;</span><span>Início</span>
+        </button>
+        <button class="nav-item" data-tab="search">
+          <span class="nav-icon">&#9678;</span><span>Buscar</span>
+          <span class="badge">em breve</span>
+        </button>
+        <button class="nav-item" data-tab="library">
+          <span class="nav-icon">&#9636;</span><span>Sua Biblioteca</span>
+        </button>
+        <button class="nav-item" data-tab="recommend">
+          <span class="nav-icon">&#9671;</span><span>Recomendações</span>
+          <span class="badge">em breve</span>
+        </button>
+
+        <div class="nav-divider"></div>
+
+        <button class="nav-item" data-tab="friends">
+          <span class="nav-icon">&#9711;</span><span>Amigos</span>
+          <span class="badge">em breve</span>
+        </button>
+        <button class="nav-item" data-tab="profile">
+          <span class="nav-icon">&#9679;</span><span>Perfil</span>
+        </button>
+        <button class="nav-item" data-tab="settings">
+          <span class="nav-icon">&#9881;</span><span>Configurações</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button class="status-pill" id="toggleBtn">
+          <span class="dot" id="statusDot"></span>
+          <span id="statusText">Iniciar sincronização</span>
+        </button>
+      </div>
+    </aside>
+
+    <main class="content">
+
+      <!-- HOME -->
+      <section class="panel" id="tab-home">
+        <p class="eyebrow">Tocando agora</p>
+
+        <div class="now-playing">
+          <div class="cover-frame">
+            <img id="coverArt" class="cover-art" alt="" />
+            <div class="cover-placeholder" id="coverPlaceholder">&#9834;</div>
+          </div>
+
+          <div class="now-playing-info">
+            <h1 class="track-title" id="trackTitle">Nada tocando ainda</h1>
+            <p class="track-artist" id="trackArtist">Dê play em algo no seu player</p>
+
+            <div class="lyric-card" id="lyricCard">
+              <p class="lyric-line" id="lyricLine">A letra da música aparece aqui em tempo real</p>
+            </div>
+
+            <div class="meta-row">
+              <span class="mono-tag" id="timeTag">00:00</span>
+              <span class="mono-tag" id="stateTag">Parado</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SEARCH (placeholder) -->
+      <section class="panel hidden" id="tab-search">
+        <p class="eyebrow">Buscar</p>
+        <h1 class="section-title">Busca de músicas e playlists</h1>
+        <div class="empty-state">
+          <p>Essa aba dependeria da API do Spotify (Client ID / Secret via OAuth), que não conseguimos
+          conectar por enquanto — o processo de login estava travando no dashboard deles.</p>
+          <p class="muted">Fica reservada pra quando fizer sentido tentar de novo.</p>
+        </div>
+        <input class="fake-input" type="text" placeholder="Buscar músicas, artistas ou playlists…" disabled />
+      </section>
+
+      <!-- LIBRARY (histórico real da sessão) -->
+      <section class="panel hidden" id="tab-library">
+        <p class="eyebrow">Sua biblioteca</p>
+        <h1 class="section-title">Histórico desta sessão</h1>
+        <ul class="track-list" id="historyList">
+          <li class="empty-state">Nada tocou ainda nesta sessão.</li>
+        </ul>
+      </section>
+
+      <!-- RECOMMEND (placeholder) -->
+      <section class="panel hidden" id="tab-recommend">
+        <p class="eyebrow">Recomendações</p>
+        <h1 class="section-title">Sugestões pra você</h1>
+        <div class="empty-state">
+          <p>Também dependeria da API do Spotify — reservado pra depois.</p>
+        </div>
+      </section>
+
+      <!-- FRIENDS (placeholder) -->
+      <section class="panel hidden" id="tab-friends">
+        <p class="eyebrow">Amigos</p>
+        <h1 class="section-title">Chat &amp; sala de estar</h1>
+        <div class="empty-state">
+          <p>Ouvir junto e conversar em tempo real com amigos exige um servidor rodando (contas, WebSocket, sincronização entre pessoas).</p>
+          <p class="muted">É a próxima fase do projeto — o layout já está reservado aqui.</p>
+        </div>
+      </section>
+
+      <!-- PROFILE (estilo rede social) -->
+      <section class="panel hidden" id="tab-profile">
+        <div class="profile-display">
+          <div class="profile-cover-display" id="profileCoverDisplay">
+            <button class="btn-outline profile-edit-trigger" id="openEditProfileBtn">Editar perfil</button>
+          </div>
+          <div class="profile-avatar-display-wrap">
+            <div class="profile-avatar-display" id="profileAvatarDisplay">
+              <span class="avatar-placeholder" id="avatarDisplayPlaceholder">+</span>
+            </div>
+          </div>
+          <div class="profile-info">
+            <h2 class="profile-name" id="profileNameDisplay">Seu nome</h2>
+            <p class="profile-handle" id="profileHandleDisplay">@usuario</p>
+            <p class="profile-bio-display" id="profileBioDisplay">Adicione uma bio em "Editar perfil".</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section class="panel hidden" id="tab-settings">
+        <h1 class="section-title">Configurações</h1>
+
+        <div class="settings-card">
+          <label for="tokenInput">Token do Discord</label>
+          <div class="token-row">
+            <input id="tokenInput" type="password" placeholder="Cole seu token aqui" />
+            <button id="saveTokenBtn" class="btn-secondary">Salvar</button>
+          </div>
+          <p class="save-hint" id="saveHint"></p>
+        </div>
+
+        <div class="settings-card">
+          <label>Status da conexão</label>
+          <p class="muted small" id="profileState">Parado</p>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- MODAL: Editar perfil -->
+  <div class="modal-overlay hidden" id="editProfileOverlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Editar perfil</h2>
+        <button class="modal-close" id="editProfileClose" aria-label="Fechar">&times;</button>
+      </div>
+
+      <div class="edit-media-wrap" id="editMediaWrap">
+        <div class="edit-cover-viewport" id="coverViewport">
+          <img id="editCoverImg" class="crop-img hidden" alt="" draggable="false" />
+          <span class="viewport-empty" id="coverEmptyState">Clique para adicionar uma capa</span>
+          <span class="viewport-plus-hint hidden" id="coverPlusHint">+</span>
+        </div>
+
+        <div class="edit-avatar-wrap">
+          <div class="edit-avatar-viewport" id="avatarViewport">
+            <img id="editAvatarImg" class="crop-img hidden" alt="" draggable="false" />
+            <span class="avatar-placeholder" id="editAvatarPlaceholder">+</span>
+            <span class="viewport-plus-hint hidden" id="avatarPlusHint">+</span>
+          </div>
+        </div>
+      </div>
+
+      <input type="file" id="coverFileInput" accept="image/*" class="hidden-file-input" />
+      <input type="file" id="avatarFileInput" accept="image/*" class="hidden-file-input" />
+
+      <p class="edit-media-hint">Clique para trocar • Arraste para reposicionar • Scroll para zoom</p>
+
+      <div class="modal-field">
+        <label for="nameInput">Nome</label>
+        <input type="text" id="nameInput" maxlength="40" placeholder="Seu nome" />
+      </div>
+
+      <div class="modal-field">
+        <label for="handleInput">Nome de usuário</label>
+        <div class="handle-input-row">
+          <span class="handle-prefix">@</span>
+          <input type="text" id="handleInput" maxlength="30" placeholder="usuario" />
+        </div>
+      </div>
+
+      <div class="modal-field">
+        <label for="bioInput">Bio</label>
+        <textarea id="bioInput" maxlength="160" placeholder="Fale um pouco sobre você…"></textarea>
+        <span class="bio-counter" id="bioCounter">0/160</span>
+      </div>
+
+      <button class="btn-secondary full-width" id="saveProfileBtn">Salvar</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
