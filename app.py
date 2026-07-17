@@ -1,10 +1,12 @@
 import asyncio
 import base64
+import hashlib
 import io
 import json
 import os
 import re
 import threading
+import webbrowser
 from datetime import datetime, timezone
 
 import requests
@@ -349,6 +351,13 @@ class Api:
     def get_token(self):
         return self.cfg.get("discord_token", "")
 
+    def open_external(self, url):
+        """Abre um link no navegador padrão do Windows — nunca dentro da própria janela
+        do Koddle, pra ele não parecer um site/navegador."""
+        if url:
+            webbrowser.open(url)
+        return {"ok": True}
+
     # ---------------- Perfil (avatar, capa, nome, bio) ----------------
 
     def save_profile(self, data):
@@ -369,6 +378,27 @@ class Api:
             "handle": self.cfg.get("profile_handle", ""),
             "bio": self.cfg.get("profile_bio", ""),
         }
+
+    # ---------------- Amigos (sessão do koddle-server) ----------------
+
+    def save_friends_session(self, token, username):
+        self.cfg["friends_token"] = token or ""
+        self.cfg["friends_username"] = username or ""
+        save_config(self.cfg)
+        return {"ok": True}
+
+    def get_friends_session(self):
+        return {
+            "token": self.cfg.get("friends_token", ""),
+            "username": self.cfg.get("friends_username", ""),
+        }
+
+    def clear_friends_session(self):
+        self.cfg["friends_token"] = ""
+        self.cfg["friends_username"] = ""
+        save_config(self.cfg)
+        return {"ok": True}
+
 
 
 def check_ui_files():
@@ -404,7 +434,16 @@ def main():
         api.stop_event.set()
 
     window.events.closed += on_closed
-    webview.start()
+
+    try:
+        webview.start(gui="edgechromium", debug=False)
+    except Exception:
+        import traceback
+        log_path = os.path.join(BASE_DIR, "crash_log.txt")
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"\n--- {datetime.now(timezone.utc).isoformat()} ---\n")
+            f.write(traceback.format_exc())
+        raise
 
 
 if __name__ == "__main__":
