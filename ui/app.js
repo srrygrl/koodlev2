@@ -2,6 +2,46 @@
 // Estado local
 // ============================================================
 let isRunning = false;
+
+// ============================================================
+// Faz o Koddle parecer um app de mesa, não um site:
+// - links sempre abrem no navegador padrão do Windows, nunca numa
+//   janela nova dentro do próprio app
+// - sem menu de botão direito estilo navegador (Voltar/Recarregar/Inspecionar)
+// - sem seleção de texto solta pela tela (fora de campos de digitar)
+// ============================================================
+function openExternal(url) {
+  if (!url || !window.pywebview) return;
+  window.pywebview.api.open_external(url);
+}
+
+document.addEventListener("contextmenu", (e) => {
+  const tag = e.target.tagName;
+  if (tag !== "INPUT" && tag !== "TEXTAREA") {
+    e.preventDefault();
+  }
+});
+
+document.addEventListener("selectstart", (e) => {
+  const tag = e.target.tagName;
+  if (tag !== "INPUT" && tag !== "TEXTAREA") {
+    e.preventDefault();
+  }
+});
+
+document.addEventListener(
+  "wheel",
+  (e) => {
+    if (e.ctrlKey) e.preventDefault();
+  },
+  { passive: false }
+);
+
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey && ["+", "-", "=", "0"].includes(e.key)) {
+    e.preventDefault();
+  }
+});
 const historySeen = new Set();
 
 // ============================================================
@@ -495,10 +535,377 @@ saveProfileBtn.addEventListener("click", async () => {
 });
 
 // ============================================================
+// Amigos — servidor próprio (login, lista, pedidos, chat, ouvir junto)
+// ============================================================
+const FRIENDS_API_BASE = "https://valiant-youth-env.up.railway.app";
+const FRIENDS_WS_BASE = "wss://valiant-youth-env.up.railway.app/ws";
+
+const friendsAuthView = document.getElementById("friendsAuthView");
+const friendsMainView = document.getElementById("friendsMainView");
+const friendsUsernameInput = document.getElementById("friendsUsernameInput");
+const friendsPasswordInput = document.getElementById("friendsPasswordInput");
+const friendsLoginBtn = document.getElementById("friendsLoginBtn");
+const friendsRegisterBtn = document.getElementById("friendsRegisterBtn");
+const friendsAuthError = document.getElementById("friendsAuthError");
+const friendsMyUsername = document.getElementById("friendsMyUsername");
+const friendsLogoutBtn = document.getElementById("friendsLogoutBtn");
+
+const addFriendInput = document.getElementById("addFriendInput");
+const addFriendBtn = document.getElementById("addFriendBtn");
+const addFriendHint = document.getElementById("addFriendHint");
+const friendRequestsBlock = document.getElementById("friendRequestsBlock");
+const incomingRequestsList = document.getElementById("incomingRequestsList");
+const friendsListEl = document.getElementById("friendsList");
+
+const chatEmptyState = document.getElementById("chatEmptyState");
+const chatActiveView = document.getElementById("chatActiveView");
+const chatFriendDot = document.getElementById("chatFriendDot");
+const chatFriendName = document.getElementById("chatFriendName");
+const chatMessages = document.getElementById("chatMessages");
+const chatInput = document.getElementById("chatInput");
+const chatSendBtn = document.getElementById("chatSendBtn");
+const shareNowPlayingBtn = document.getElementById("shareNowPlayingBtn");
+const friendNowPlayingCard = document.getElementById("friendNowPlayingCard");
+const friendNowPlayingImg = document.getElementById("friendNowPlayingImg");
+const friendNowPlayingTitle = document.getElementById("friendNowPlayingTitle");
+const friendNowPlayingArtist = document.getElementById("friendNowPlayingArtist");
+
+let friendsToken = "";
+let friendsUsernameValue = "";
+let friendsSocket = null;
+let friendsOnlineSet = new Set();
+let currentChatFriend = null;
+let friendsReconnectTimer = null;
+
+function friendsAuthHeaders() {
+  return { Authorization: `Bearer ${friendsToken}`, "Content-Type": "application/json" };
+}
+
+async function initFriends() {
+  if (!window.pywebview) return;
+  const session = await window.pywebview.api.get_friends_session();
+  if (session.token) {
+    friendsToken = session.token;
+    friendsUsernameValue = session.username;
+    const ok = await friendsVerifySession();
+    if (ok) {
+      enterFriendsMainView();
+      return;
+    }
+  }
+  showFriendsAuthView();
+}
+
+async function friendsVerifySession() {
+  try {
+    const resp = await fetch(`${FRIENDS_API_BASE}/me`, { headers: friendsAuthHeaders() });
+    return resp.ok;
+  } catch {
+    return false;
+  }
+}
+
+function showFriendsAuthView() {
+  friendsAuthView.classList.remove("hidden");
+  friendsMainView.classList.add("hidden");
+}
+
+function enterFriendsMainView() {
+  friendsAuthView.classList.add("hidden");
+  friendsMainView.classList.remove("hidden");
+  friendsMyUsername.textContent = friendsUsernameValue;
+  connectFriendsSocket();
+  loadFriendsList();
+  loadFriendRequests();
+}
+
+async function friendsAuth(kind) {
+  const username = friendsUsernameInput.value.trim();
+  const password = friendsPasswordInput.value;
+  friendsAuthError.textContent = "";
+
+  if (!username || !password) {
+    friendsAuthError.textContent = "Preenche usuário e senha.";
+    return;
+  }
+
+  try {
+    const resp = await fetch(`${FRIENDS_API_BASE}/${kind}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      friendsAuthError.textContent = data.detail || "Erro ao entrar.";
+      return;
+    }
+
+    friendsToken = data.access_token;
+    friendsUsernameValue = data.username;
+    await window.pywebview.api.save_friends_session(friendsToken, friendsUsernameValue);
+    friendsPasswordInput.value = "";
+    enterFriendsMainView();
+  } catch {
+    friendsAuthError.textContent = "Não consegui falar com o servidor. Ele está no ar?";
+  }
+}
+
+friendsLoginBtn.addEventListener("click", () => friendsAuth("login"));
+friendsRegisterBtn.addEventListener("click", () => friendsAuth("register"));
+friendsPasswordInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") friendsAuth("login");
+});
+
+friendsLogoutBtn.addEventListener("click", async () => {
+  if (friendsSocket) friendsSocket.close();
+  friendsToken = "";
+  friendsUsernameValue = "";
+  currentChatFriend = null;
+  if (window.pywebview) await window.pywebview.api.clear_friends_session();
+  showFriendsAuthView();
+});
+
+// ---------------- WebSocket (chat + presença + ouvir junto) ----------------
+
+function connectFriendsSocket() {
+  if (friendsSocket) friendsSocket.close();
+  clearTimeout(friendsReconnectTimer);
+
+  friendsSocket = new WebSocket(`${FRIENDS_WS_BASE}?token=${encodeURIComponent(friendsToken)}`);
+
+  friendsSocket.addEventListener("message", (event) => {
+    let data;
+    try {
+      data = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+    handleFriendsSocketMessage(data);
+  });
+
+  friendsSocket.addEventListener("close", () => {
+    if (friendsToken) {
+      friendsReconnectTimer = setTimeout(connectFriendsSocket, 4000);
+    }
+  });
+}
+
+function handleFriendsSocketMessage(data) {
+  if (data.type === "presence") {
+    if (data.online) friendsOnlineSet.add(data.username);
+    else friendsOnlineSet.delete(data.username);
+    renderFriendOnlineDots();
+  } else if (data.type === "chat") {
+    const otherParty = data.from === friendsUsernameValue ? currentChatFriend : data.from;
+    if (otherParty === currentChatFriend) {
+      appendChatBubble(data.from === friendsUsernameValue, data.text);
+    }
+  } else if (data.type === "now_playing") {
+    if (data.from === currentChatFriend) {
+      showFriendNowPlaying(data);
+    }
+  }
+}
+
+// ---------------- Lista de amigos ----------------
+
+async function loadFriendsList() {
+  try {
+    const resp = await fetch(`${FRIENDS_API_BASE}/friends`, { headers: friendsAuthHeaders() });
+    const data = await resp.json();
+    renderFriendsList(data.friends || []);
+  } catch {
+    friendsListEl.innerHTML = '<li class="muted small">Não consegui carregar seus amigos.</li>';
+  }
+}
+
+let lastFriendsData = [];
+
+function renderFriendsList(friends) {
+  lastFriendsData = friends;
+  if (!friends.length) {
+    friendsListEl.innerHTML = '<li class="empty-state">Nenhum amigo ainda.</li>';
+    return;
+  }
+  friendsListEl.innerHTML = friends
+    .map((f) => {
+      const online = friendsOnlineSet.has(f.username) || f.online;
+      return `
+        <li class="friend-row ${f.username === currentChatFriend ? "is-active" : ""}" data-friend="${f.username}">
+          <span class="dot ${online ? "is-live" : ""}"></span>
+          <span class="friend-row-name">${escapeHtmlFriends(f.username)}</span>
+        </li>
+      `;
+    })
+    .join("");
+}
+
+function renderFriendOnlineDots() {
+  renderFriendsList(lastFriendsData);
+}
+
+friendsListEl.addEventListener("click", (e) => {
+  const row = e.target.closest(".friend-row[data-friend]");
+  if (row) openChatWith(row.dataset.friend);
+});
+
+// ---------------- Pedidos de amizade ----------------
+
+addFriendBtn.addEventListener("click", async () => {
+  const username = addFriendInput.value.trim();
+  if (!username) return;
+
+  try {
+    const resp = await fetch(`${FRIENDS_API_BASE}/friends/request`, {
+      method: "POST",
+      headers: friendsAuthHeaders(),
+      body: JSON.stringify({ username }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      addFriendHint.textContent = data.detail || "Erro ao enviar pedido.";
+      return;
+    }
+    addFriendHint.textContent = "Pedido enviado!";
+    addFriendInput.value = "";
+    setTimeout(() => (addFriendHint.textContent = ""), 2500);
+  } catch {
+    addFriendHint.textContent = "Não consegui falar com o servidor.";
+  }
+});
+
+async function loadFriendRequests() {
+  try {
+    const resp = await fetch(`${FRIENDS_API_BASE}/friends/requests`, { headers: friendsAuthHeaders() });
+    const data = await resp.json();
+    renderIncomingRequests(data.incoming || []);
+  } catch {
+    /* silencioso — não é crítico */
+  }
+}
+
+function renderIncomingRequests(incoming) {
+  if (!incoming.length) {
+    friendRequestsBlock.classList.add("hidden");
+    return;
+  }
+  friendRequestsBlock.classList.remove("hidden");
+  incomingRequestsList.innerHTML = incoming
+    .map(
+      (username) => `
+        <li class="friend-request-row">
+          <span class="friend-request-name">${escapeHtmlFriends(username)}</span>
+          <div class="friend-request-actions">
+            <button class="icon-btn-sm accept" data-accept="${username}" title="Aceitar">&#10003;</button>
+            <button class="icon-btn-sm decline" data-decline="${username}" title="Recusar">&times;</button>
+          </div>
+        </li>
+      `
+    )
+    .join("");
+}
+
+incomingRequestsList.addEventListener("click", async (e) => {
+  const acceptBtn = e.target.closest("[data-accept]");
+  const declineBtn = e.target.closest("[data-decline]");
+  if (!acceptBtn && !declineBtn) return;
+
+  const username = acceptBtn ? acceptBtn.dataset.accept : declineBtn.dataset.decline;
+  const endpoint = acceptBtn ? "accept" : "decline";
+
+  await fetch(`${FRIENDS_API_BASE}/friends/${endpoint}`, {
+    method: "POST",
+    headers: friendsAuthHeaders(),
+    body: JSON.stringify({ username }),
+  });
+
+  loadFriendRequests();
+  if (acceptBtn) loadFriendsList();
+});
+
+// ---------------- Chat ----------------
+
+async function openChatWith(username) {
+  currentChatFriend = username;
+  renderFriendsList(lastFriendsData);
+
+  chatEmptyState.classList.add("hidden");
+  chatActiveView.classList.remove("hidden");
+  chatFriendName.textContent = username;
+  chatFriendDot.classList.toggle("is-live", friendsOnlineSet.has(username));
+  friendNowPlayingCard.classList.add("hidden");
+  chatMessages.innerHTML = `<p class="muted small">Carregando…</p>`;
+
+  try {
+    const resp = await fetch(`${FRIENDS_API_BASE}/messages/${encodeURIComponent(username)}`, {
+      headers: friendsAuthHeaders(),
+    });
+    const data = await resp.json();
+    chatMessages.innerHTML = "";
+    (data.messages || []).forEach((m) => appendChatBubble(m.from === friendsUsernameValue, m.text));
+  } catch {
+    chatMessages.innerHTML = `<p class="muted small">Não consegui carregar as mensagens.</p>`;
+  }
+}
+
+function appendChatBubble(isMine, text) {
+  const bubble = document.createElement("div");
+  bubble.className = `chat-bubble ${isMine ? "is-mine" : "is-theirs"}`;
+  bubble.textContent = text;
+  chatMessages.appendChild(bubble);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function sendChatMessage() {
+  const text = chatInput.value.trim();
+  if (!text || !currentChatFriend || !friendsSocket || friendsSocket.readyState !== WebSocket.OPEN) return;
+
+  friendsSocket.send(JSON.stringify({ type: "chat", to: currentChatFriend, text }));
+  chatInput.value = "";
+}
+
+chatSendBtn.addEventListener("click", sendChatMessage);
+chatInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") sendChatMessage();
+});
+
+// ---------------- Ouvir junto ----------------
+
+shareNowPlayingBtn.addEventListener("click", () => {
+  if (!currentChatFriend || !friendsSocket || friendsSocket.readyState !== WebSocket.OPEN) return;
+
+  friendsSocket.send(
+    JSON.stringify({
+      type: "now_playing",
+      to: currentChatFriend,
+      title: trackTitle.textContent.trim(),
+      artist: trackArtist.textContent.trim(),
+      is_playing: true,
+    })
+  );
+});
+
+function showFriendNowPlaying(data) {
+  friendNowPlayingCard.classList.remove("hidden");
+  friendNowPlayingTitle.textContent = data.title || "";
+  friendNowPlayingArtist.textContent = data.artist || "";
+  friendNowPlayingImg.src = coverArt.classList.contains("is-visible") ? coverArt.src : "";
+}
+
+function escapeHtmlFriends(str) {
+  const div = document.createElement("div");
+  div.textContent = str || "";
+  return div.innerHTML;
+}
+
+// ============================================================
 // Boot
 // ============================================================
 window.addEventListener("pywebviewready", async () => {
   loadProfile();
+  initFriends();
   const token = await (window.pywebview ? window.pywebview.api.get_token() : Promise.resolve(""));
   if (token) {
     tokenInput.value = token;
