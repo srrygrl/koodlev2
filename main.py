@@ -1,9 +1,11 @@
 import json
+import traceback
 from datetime import datetime, timezone
 from typing import Dict
 
-from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer
 
 from auth import create_access_token, decode_access_token, hash_password, verify_password
@@ -18,6 +20,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# TEMPORÁRIO — mostra o erro de verdade na resposta em vez do genérico
+# "Internal Server Error". Depois que resolvermos o problema, dá pra remover
+# esse bloco (ou deixar, só não é ideal expor tracebacks pra sempre).
+@app.exception_handler(Exception)
+async def debug_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": str(exc),
+            "type": type(exc).__name__,
+            "traceback": traceback.format_exc(),
+        },
+    )
+
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
 
