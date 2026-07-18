@@ -68,12 +68,16 @@ async def get_current_username(token: str = Depends(oauth2_scheme)) -> str:
 @app.post("/register")
 async def register(data: UserRegister):
     username = data.username.strip().lower()
-    existing = await users_collection.find_one({"username": username})
-    if existing:
+    email = data.email.strip().lower()
+
+    if await users_collection.find_one({"username": username}):
         raise HTTPException(status_code=400, detail="Esse nome de usuário já existe.")
+    if await users_collection.find_one({"email": email}):
+        raise HTTPException(status_code=400, detail="Esse e-mail já está cadastrado.")
 
     await users_collection.insert_one({
         "username": username,
+        "email": email,
         "display_name": data.username.strip(),
         "password_hash": hash_password(data.password),
         "created_at": datetime.now(timezone.utc),
@@ -85,13 +89,15 @@ async def register(data: UserRegister):
 
 @app.post("/login")
 async def login(data: UserLogin):
-    username = data.username.strip().lower()
-    user = await users_collection.find_one({"username": username})
+    identifier = data.username.strip().lower()
+    user = await users_collection.find_one(
+        {"$or": [{"username": identifier}, {"email": identifier}]}
+    )
     if not user or not verify_password(data.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Usuário ou senha incorretos.")
+        raise HTTPException(status_code=401, detail="Usuário/e-mail ou senha incorretos.")
 
-    token = create_access_token({"sub": username})
-    return {"access_token": token, "username": username}
+    token = create_access_token({"sub": user["username"]})
+    return {"access_token": token, "username": user["username"]}
 
 
 @app.get("/me")
