@@ -20,7 +20,10 @@ messages_collection = db["messages"]
 async def ensure_indexes():
     """Cria os índices necessários — roda uma vez quando o servidor inicia."""
     await users_collection.create_index("username", unique=True)
-    await users_collection.create_index("email", unique=True)
+    # sparse=True: ignora documentos sem o campo "email" na hora de checar
+    # unicidade — isso evita quebrar por causa de contas antigas criadas
+    # antes desse campo existir.
+    await users_collection.create_index("email", unique=True, sparse=True)
     await friendships_collection.create_index("pair")
     await messages_collection.create_index("pair")
     await messages_collection.create_index("timestamp")
