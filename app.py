@@ -31,7 +31,12 @@ FRIENDS_API_BASE = "https://valiant-youth-env.up.railway.app"
 
 # Login via Google — Client ID público (sem Client Secret, usa PKCE).
 # Crie em console.cloud.google.com, tipo de app "Desktop app".
-GOOGLE_CLIENT_ID = "931116092083-hk8bloen2tvp7tif7fp3j7q57gsajs00.apps.googleusercontent.com"
+GOOGLE_CLIENT_ID = "SEU_GOOGLE_CLIENT_ID_AQUI.apps.googleusercontent.com"
+# O Google, ao contrário do Spotify/Discord, ainda exige o Client Secret
+# mesmo usando PKCE — é uma peculiaridade da implementação deles, não
+# insegurança nossa (os próprios exemplos oficiais do Google fazem o mesmo
+# pra apps instalados/desktop).
+GOOGLE_CLIENT_SECRET = "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"
 GOOGLE_REDIRECT_URI = "http://127.0.0.1:8898/callback"
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -434,6 +439,7 @@ class Api:
                 access_token = oauth_client.run_pkce_login(
                     GOOGLE_AUTH_URL, GOOGLE_TOKEN_URL, GOOGLE_CLIENT_ID,
                     GOOGLE_REDIRECT_URI, 8898, GOOGLE_SCOPE,
+                    client_secret=GOOGLE_CLIENT_SECRET,
                 )
                 resp = requests.post(
                     f"{FRIENDS_API_BASE}/auth/google",

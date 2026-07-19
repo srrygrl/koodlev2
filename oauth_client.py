@@ -58,10 +58,11 @@ def _make_handler():
     return _Handler
 
 
-def run_pkce_login(auth_url, token_url, client_id, redirect_uri, port, scope, timeout=120):
-    """Fluxo genérico de login OAuth2 com PKCE (sem precisar de Client Secret) —
-    usado tanto pro Google quanto pro Discord. Abre o navegador, espera o
-    usuário logar, troca o código por um access_token."""
+def run_pkce_login(auth_url, token_url, client_id, redirect_uri, port, scope, timeout=120, client_secret=None):
+    """Fluxo genérico de login OAuth2 com PKCE — usado tanto pro Google quanto
+    pro Discord. O client_secret é opcional: o Discord dispensa ele de verdade,
+    mas o Google (mesmo usando PKCE) ainda exige esse valor no passo de troca
+    do código pelo token — é uma peculiaridade da implementação deles."""
     verifier, challenge = _generate_pkce_pair()
 
     params = {
@@ -94,20 +95,24 @@ def run_pkce_login(auth_url, token_url, client_id, redirect_uri, port, scope, ti
     if not httpd.auth_code:
         raise OAuthError("Tempo esgotado esperando o login no navegador.")
 
+    token_data = {
+        "grant_type": "authorization_code",
+        "code": httpd.auth_code,
+        "redirect_uri": redirect_uri,
+        "client_id": client_id,
+        "code_verifier": verifier,
+    }
+    if client_secret:
+        token_data["client_secret"] = client_secret
+
     resp = requests.post(
         token_url,
-        data={
-            "grant_type": "authorization_code",
-            "code": httpd.auth_code,
-            "redirect_uri": redirect_uri,
-            "client_id": client_id,
-            "code_verifier": verifier,
-        },
+        data=token_data,
         headers={"Accept": "application/json"},
         timeout=10,
     )
     if resp.status_code != 200:
-        raise OAuthError(f"Falha ao trocar código por token ({resp.status_code}).")
+        raise OAuthError(f"Falha ao trocar código por token ({resp.status_code}): {resp.text[:200]}")
 
     data = resp.json()
     access_token = data.get("access_token")
