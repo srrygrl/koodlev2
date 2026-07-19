@@ -749,6 +749,65 @@ async function doRegister() {
 
 authRegisterBtn.addEventListener("click", doRegister);
 
+// ---------------- Continuar com Google / Discord ----------------
+
+const googleLoginBtn = document.getElementById("googleLoginBtn");
+const discordLoginBtn = document.getElementById("discordLoginBtn");
+const oauthError = document.getElementById("oauthError");
+
+function setOAuthButtonsBusy(busy, activeBtn) {
+  googleLoginBtn.disabled = busy;
+  discordLoginBtn.disabled = busy;
+  if (busy) {
+    activeBtn.dataset.originalText = activeBtn.innerHTML;
+    activeBtn.textContent = "Aguardando login no navegador…";
+  } else {
+    googleLoginBtn.innerHTML = googleLoginBtn.dataset.originalText || googleLoginBtn.innerHTML;
+    discordLoginBtn.innerHTML = discordLoginBtn.dataset.originalText || discordLoginBtn.innerHTML;
+  }
+}
+
+googleLoginBtn.addEventListener("click", async () => {
+  if (!window.pywebview) return;
+  oauthError.textContent = "";
+  setOAuthButtonsBusy(true, googleLoginBtn);
+  const result = await window.pywebview.api.google_login();
+  if (result && result.error) {
+    oauthError.textContent = result.error;
+    setOAuthButtonsBusy(false);
+  }
+  // Se deu certo, o resultado chega via window.onAuthEvent
+});
+
+discordLoginBtn.addEventListener("click", async () => {
+  if (!window.pywebview) return;
+  oauthError.textContent = "";
+  setOAuthButtonsBusy(true, discordLoginBtn);
+  const result = await window.pywebview.api.discord_oauth_login();
+  if (result && result.error) {
+    oauthError.textContent = result.error;
+    setOAuthButtonsBusy(false);
+  }
+  // Se deu certo, o resultado chega via window.onAuthEvent
+});
+
+window.onAuthEvent = async function (payload) {
+  setOAuthButtonsBusy(false);
+
+  if (payload.error) {
+    oauthError.textContent = payload.error;
+    return;
+  }
+
+  if (payload.ok && window.pywebview) {
+    const session = await window.pywebview.api.get_friends_session();
+    friendsToken = session.token;
+    friendsUsernameValue = session.username;
+    hideAuthGate();
+    enterFriendsMainView();
+  }
+};
+
 // ---------------- Sair ----------------
 
 friendsLogoutBtn.addEventListener("click", async () => {

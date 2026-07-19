@@ -1,8 +1,11 @@
 import json
+import re
+import secrets as pysecrets
 import traceback
 from datetime import datetime, timezone
 from typing import Dict
 
+import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -10,7 +13,7 @@ from fastapi.security import OAuth2PasswordBearer
 
 from auth import create_access_token, decode_access_token, hash_password, verify_password
 from database import ensure_indexes, friendships_collection, messages_collection, users_collection
-from models import FriendRequestCreate, UserLogin, UserRegister
+from models import FriendRequestCreate, OAuthLogin, UserLogin, UserRegister
 
 app = FastAPI(title="Koddle Friends Server")
 
@@ -104,6 +107,93 @@ async def login(data: UserLogin):
 async def me(username: str = Depends(get_current_username)):
     user = await users_collection.find_one({"username": username})
     return {"username": user["username"], "display_name": user.get("display_name", username)}
+
+
+# ---------------- Login via Google / Discord (OAuth) ----------------
+# Diferente do token de status do Discord (usado só pra sincronizar a letra
+# da música) — isso aqui é login de verdade, oficial, via OAuth2.
+
+async def _get_or_create_oauth_user(provider_field: str, provider_id: str, email: str, display_name: str):
+    email = (email or "").strip().lower() or None
+
+    user = await users_collection.find_one({provider_field: provider_id})
+    if user:
+        return user
+
+    # Se já existe uma conta com esse e-mail (criada por senha ou outro
+    # provedor), linka essa conta em vez de criar uma duplicada.
+    if email:
+        user = await users_collection.find_one({"email": email})
+        if user:
+            await users_collection.update_one(
+                {"_id": user["_id"]}, {"$set": {provider_field: provider_id}}
+            )
+            user[provider_field] = provider_id
+            return user
+
+    base_username = re.sub(r"[^a-z0-9_]", "", (display_name or "usuario").lower().replace(" ", "_"))[:16]
+    base_username = base_username or "usuario"
+
+    username = base_username
+    while await users_collection.find_one({"username": username}):
+        username = f"{base_username}{pysecrets.randbelow(9000) + 1000}"
+
+    doc = {
+        "username": username,
+        "email": email,
+        "display_name": display_name or username,
+        "password_hash": None,
+        provider_field: provider_id,
+        "created_at": datetime.now(timezone.utc),
+    }
+    await users_collection.insert_one(doc)
+    return doc
+
+
+@app.post("/auth/google")
+async def auth_google(data: OAuthLogin):
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            headers={"Authorization": f"Bearer {data.access_token}"},
+        )
+
+    if resp.status_code != 200:
+        raise HTTPException(status_code=401, detail="Token do Google inválido ou expirado.")
+
+    info = resp.json()
+    google_id = info.get("sub")
+    if not google_id:
+        raise HTTPException(status_code=400, detail="Não consegui confirmar sua conta do Google.")
+
+    user = await _get_or_create_oauth_user(
+        "google_id", google_id, info.get("email"), info.get("name")
+    )
+    token = create_access_token({"sub": user["username"]})
+    return {"access_token": token, "username": user["username"]}
+
+
+@app.post("/auth/discord")
+async def auth_discord(data: OAuthLogin):
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(
+            "https://discord.com/api/users/@me",
+            headers={"Authorization": f"Bearer {data.access_token}"},
+        )
+
+    if resp.status_code != 200:
+        raise HTTPException(status_code=401, detail="Token do Discord inválido ou expirado.")
+
+    info = resp.json()
+    discord_id = info.get("id")
+    if not discord_id:
+        raise HTTPException(status_code=400, detail="Não consegui confirmar sua conta do Discord.")
+
+    user = await _get_or_create_oauth_user(
+        "discord_id", discord_id, info.get("email"), info.get("username")
+    )
+    token = create_access_token({"sub": user["username"]})
+    return {"access_token": token, "username": user["username"]}
 
 
 # ---------------- Amigos ----------------

@@ -14,6 +14,8 @@ import syncedlyrics
 import webview
 from PIL import Image
 
+import oauth_client
+
 from winrt.windows.media.control import (
     GlobalSystemMediaTransportControlsSessionManager as MediaManager,
     GlobalSystemMediaTransportControlsSessionPlaybackStatus,
@@ -23,6 +25,26 @@ from winrt.windows.storage.streams import DataReader, Buffer, InputStreamOptions
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 UI_DIR = os.path.join(BASE_DIR, "ui")
+
+# Servidor de Amigos (koddle-server)
+FRIENDS_API_BASE = "https://valiant-youth-env.up.railway.app"
+
+# Login via Google — Client ID público (sem Client Secret, usa PKCE).
+# Crie em console.cloud.google.com, tipo de app "Desktop app".
+GOOGLE_CLIENT_ID = 931116092083-hk8bloen2tvp7tif7fp3j7q57gsajs00.apps.googleusercontent.com
+GOOGLE_REDIRECT_URI = "http://127.0.0.1:8898/callback"
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_SCOPE = "openid email profile"
+
+# Login via Discord — Client ID público (sem Client Secret, usa PKCE).
+# Crie em discord.com/developers/applications, aba OAuth2.
+# Isso é diferente do token de status usado pra sincronizar a letra da música.
+DISCORD_OAUTH_CLIENT_ID = 1528307591137202196
+DISCORD_REDIRECT_URI = "http://127.0.0.1:8899/callback"
+DISCORD_AUTH_URL = "https://discord.com/api/oauth2/authorize"
+DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token"
+DISCORD_OAUTH_SCOPE = "identify email"
 
 # ------------------------------------------------------------------
 # Config
@@ -397,6 +419,74 @@ class Api:
         self.cfg["friends_token"] = ""
         self.cfg["friends_username"] = ""
         save_config(self.cfg)
+        return {"ok": True}
+
+    def _push_auth_event(self, payload):
+        try:
+            js = f"window.onAuthEvent && window.onAuthEvent({json.dumps(payload)})"
+            self.window.evaluate_js(js)
+        except Exception:
+            pass
+
+    def google_login(self):
+        def worker():
+            try:
+                access_token = oauth_client.run_pkce_login(
+                    GOOGLE_AUTH_URL, GOOGLE_TOKEN_URL, GOOGLE_CLIENT_ID,
+                    GOOGLE_REDIRECT_URI, 8898, GOOGLE_SCOPE,
+                )
+                resp = requests.post(
+                    f"{FRIENDS_API_BASE}/auth/google",
+                    json={"access_token": access_token},
+                    timeout=10,
+                )
+                if resp.status_code != 200:
+                    detail = resp.json().get("detail", "Erro ao entrar com Google.")
+                    self._push_auth_event({"provider": "google", "error": detail})
+                    return
+
+                data = resp.json()
+                self.cfg["friends_token"] = data["access_token"]
+                self.cfg["friends_username"] = data["username"]
+                save_config(self.cfg)
+                self._push_auth_event({"provider": "google", "ok": True, "username": data["username"]})
+            except oauth_client.OAuthError as e:
+                self._push_auth_event({"provider": "google", "error": str(e)})
+            except Exception as e:
+                self._push_auth_event({"provider": "google", "error": f"Erro inesperado: {e}"})
+
+        threading.Thread(target=worker, daemon=True).start()
+        return {"started": True}
+
+    def discord_oauth_login(self):
+        def worker():
+            try:
+                access_token = oauth_client.run_pkce_login(
+                    DISCORD_AUTH_URL, DISCORD_TOKEN_URL, DISCORD_OAUTH_CLIENT_ID,
+                    DISCORD_REDIRECT_URI, 8899, DISCORD_OAUTH_SCOPE,
+                )
+                resp = requests.post(
+                    f"{FRIENDS_API_BASE}/auth/discord",
+                    json={"access_token": access_token},
+                    timeout=10,
+                )
+                if resp.status_code != 200:
+                    detail = resp.json().get("detail", "Erro ao entrar com Discord.")
+                    self._push_auth_event({"provider": "discord", "error": detail})
+                    return
+
+                data = resp.json()
+                self.cfg["friends_token"] = data["access_token"]
+                self.cfg["friends_username"] = data["username"]
+                save_config(self.cfg)
+                self._push_auth_event({"provider": "discord", "ok": True, "username": data["username"]})
+            except oauth_client.OAuthError as e:
+                self._push_auth_event({"provider": "discord", "error": str(e)})
+            except Exception as e:
+                self._push_auth_event({"provider": "discord", "error": f"Erro inesperado: {e}"})
+
+        threading.Thread(target=worker, daemon=True).start()
+        return {"started": True}
         return {"ok": True}
 
 

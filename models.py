@@ -14,6 +14,10 @@ class UserLogin(BaseModel):
     password: str
 
 
+class OAuthLogin(BaseModel):
+    access_token: str
+
+
 class FriendRequestCreate(BaseModel):
     username: str
 

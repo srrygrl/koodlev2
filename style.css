@@ -824,6 +824,37 @@ button, input {
 }
 .auth-switch a:hover { text-decoration: underline; }
 
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 22px 0 16px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--panel-border);
+}
+
+.oauth-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: var(--panel-glass-strong);
+  font-size: 10px;
+  font-weight: 700;
+  margin-right: 4px;
+}
+
 /* ---------- Gate inicial (token do Discord) ---------- */
 .gate-overlay {
   position: fixed;
