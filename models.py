@@ -18,6 +18,10 @@ class OAuthLogin(BaseModel):
     access_token: str
 
 
+class HandleUpdate(BaseModel):
+    handle: str = Field(min_length=3, max_length=30)
+
+
 class FriendRequestCreate(BaseModel):
     username: str
 

@@ -13,7 +13,7 @@ from fastapi.security import OAuth2PasswordBearer
 
 from auth import create_access_token, decode_access_token, hash_password, verify_password
 from database import ensure_indexes, friendships_collection, messages_collection, users_collection
-from models import FriendRequestCreate, OAuthLogin, UserLogin, UserRegister
+from models import FriendRequestCreate, HandleUpdate, OAuthLogin, UserLogin, UserRegister
 
 app = FastAPI(title="Koddle Friends Server")
 
@@ -194,6 +194,40 @@ async def auth_discord(data: OAuthLogin):
     )
     token = create_access_token({"sub": user["username"]})
     return {"access_token": token, "username": user["username"]}
+
+
+# ---------------- @ de exibição do Perfil (único, separado do login) ----------------
+
+_HANDLE_RE = re.compile(r"^[a-z0-9_.]{3,30}$")
+
+
+@app.get("/profile/handle-available")
+async def handle_available(handle: str, username: str = Depends(get_current_username)):
+    handle = handle.strip().lower()
+    if not _HANDLE_RE.match(handle):
+        return {"available": False, "reason": "Use só letras, números, _ ou . (3 a 30 caracteres)."}
+
+    existing = await users_collection.find_one({"profile_handle": handle})
+    if existing and existing["username"] != username:
+        return {"available": False, "reason": "Esse @ já está em uso."}
+    return {"available": True}
+
+
+@app.post("/profile/handle")
+async def set_handle(data: HandleUpdate, username: str = Depends(get_current_username)):
+    handle = data.handle.strip().lower()
+    if not _HANDLE_RE.match(handle):
+        raise HTTPException(
+            status_code=400,
+            detail="Nome de usuário inválido — use só letras, números, _ ou . (3 a 30 caracteres).",
+        )
+
+    existing = await users_collection.find_one({"profile_handle": handle})
+    if existing and existing["username"] != username:
+        raise HTTPException(status_code=400, detail="Esse @ já está em uso.")
+
+    await users_collection.update_one({"username": username}, {"$set": {"profile_handle": handle}})
+    return {"ok": True}
 
 
 # ---------------- Amigos ----------------

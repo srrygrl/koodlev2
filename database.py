@@ -24,6 +24,7 @@ async def ensure_indexes():
     # unicidade — isso evita quebrar por causa de contas antigas criadas
     # antes desse campo existir.
     await users_collection.create_index("email", unique=True, sparse=True)
+    await users_collection.create_index("profile_handle", unique=True, sparse=True)
     await friendships_collection.create_index("pair")
     await messages_collection.create_index("pair")
     await messages_collection.create_index("timestamp")
